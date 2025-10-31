@@ -1,0 +1,22 @@
+{
+  "quiz1": {
+    "total_points_earned": 0,
+    "quiz_completions": [
+      {
+        "date": "2025-10-30T22:21:40.258979",
+        "points": 0,
+        "reason": "weekly_quiz"
+      }
+    ]
+  },
+  "kechup": {
+    "total_points_earned": 10,
+    "quiz_completions": [
+      {
+        "date": "2025-10-30T22:31:47.451167",
+        "points": 10,
+        "reason": "weekly_quiz"
+      }
+    ]
+  }
+}
