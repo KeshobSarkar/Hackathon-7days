@@ -1,140 +1,216 @@
-import requests
+import openai
 import json
 import chromadb
+import os
+from datetime import datetime
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class QuizGenerator:
     def __init__(self):
-        self.ollama_url = "http://127.0.0.1:11434/api/generate"
+        # Initialize OpenAI
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            print("❌ OPENAI_API_KEY not found in .env file")
+        else:
+            print("✅ OpenAI API key loaded successfully")
+        
+        # Cost tracking
+        self.total_tokens_used = 0
+        self.cost_per_token = 0.0015 / 1000  # GPT-3.5-turbo input cost
         
         # Initialize ChromaDB
         try:
             self.chroma_client = chromadb.PersistentClient(path="./database/chroma_db")
             self.questions_collection = self.chroma_client.get_collection("quiz_questions")
-            print(" Loaded existing quiz questions collection")
+            print("✅ Loaded existing quiz questions collection")
         except:
             self.chroma_client = chromadb.PersistentClient(path="./database/chroma_db")
             self.questions_collection = self.chroma_client.create_collection("quiz_questions")
-            print(" Created new quiz questions collection")
+            print("✅ Created new quiz questions collection")
     
-    def call_ollama(self, prompt, model="llama3:latest"):
-        """Call local Ollama API to generate content"""
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False
-        }
+    def call_openai(self, prompt, model="gpt-3.5-turbo"):
+        """Call OpenAI API with error handling"""
+        if not self.api_key:
+            raise Exception("OpenAI API key not configured")
+        
+        # Budget check
+        current_cost = self.total_tokens_used * self.cost_per_token
+        if current_cost > 4.5:  # Stop at $4.5 to be safe
+            raise Exception("🚨 Budget limit nearly reached! Switch to demo mode.")
         
         try:
-            print(f"🤖 Calling Ollama with model: {model}")
-            response = requests.post(self.ollama_url, json=payload, timeout=30)
+            print(f"🤖 Calling OpenAI with model: {model}")
             
-            if response.status_code != 200:
-                raise Exception(f"Ollama API returned status {response.status_code}")
-                
-            response.raise_for_status()
-            result = response.json()
-            print("✅ Successfully got response from Ollama")
-            return result["response"]
-        except requests.exceptions.ConnectionError:
-            raise Exception("Cannot connect to Ollama. Make sure 'ollama serve' is running!")
+            client = openai.OpenAI(api_key=self.api_key)
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": """You are a quiz generator specializing in QIC Group insurance products in Qatar. 
+                        Always return valid JSON format. Make questions specific to QIC services and accurate."""
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=1500
+            )
+            
+            # Track usage
+            tokens_used = response.usage.total_tokens
+            self.total_tokens_used += tokens_used
+            cost_this_call = tokens_used * self.cost_per_token
+            total_cost = self.total_tokens_used * self.cost_per_token
+            
+            print(f"✅ OpenAI response received")
+            print(f"💰 Tokens used: {tokens_used} | This call: ${cost_this_call:.4f} | Total: ${total_cost:.4f}")
+            
+            return response.choices[0].message.content
+            
+        except openai.AuthenticationError:
+            raise Exception("Invalid OpenAI API key. Please check your key.")
+        except openai.RateLimitError:
+            raise Exception("OpenAI rate limit exceeded. Please wait a moment.")
+        except openai.APIConnectionError:
+            raise Exception("Network error. Please check your connection.")
         except Exception as e:
-            raise Exception(f"Ollama API error: {e}")
+            raise Exception(f"OpenAI API error: {e}")
     
-    def generate_quiz(self, theme, difficulty="easy", num_questions=3):
-        """Generate a quiz using Ollama AI"""
-        print(f"🎯 Generating {num_questions} {difficulty} questions about {theme}")
+    def generate_quiz(self, theme, difficulty="easy", num_questions=5):
+        """Generate QIC-themed quiz using OpenAI"""
         
-        # More specific prompts for each theme
-        theme_prompts = {
+        # Budget check
+        remaining_budget = self.get_remaining_budget()
+        if remaining_budget < 0.1:
+            print("🔄 Low budget - switching to demo mode")
+            return self.get_theme_specific_demo(theme, num_questions)
+        
+        # Check if API key is available
+        if not self.api_key:
+            print("❌ No OpenAI API key found - using demo questions")
+            return self.get_theme_specific_demo(theme, num_questions)
+        
+        print(f"🎯 Generating {num_questions} {difficulty} questions about {theme}")
+        print(f"💰 Remaining budget: ${remaining_budget:.2f}")
+        
+        # QIC-specific theme details
+        theme_contexts = {
             "Car Insurance": """
-            Focus on QIC car insurance products in Qatar:
-            - TPL (Third Party Liability) - mandatory insurance
-            - Comprehensive car insurance
+            QIC Car Insurance in Qatar:
+            - TPL (Third Party Liability) - mandatory by Qatari law
+            - Comprehensive insurance - covers own damage + third party
             - GCC car insurance for cross-border travel
-            - Insurance requirements for car registration
-            - Istimara renewal process
-            - Premium calculations and coverage options
+            - Istimara renewal requirements
+            - Premium calculation factors
+            - Claims process for motor insurance
+            - Online policy purchase through QIC
+            - Different coverage options and benefits
+            - No-claim discounts and benefits
             """,
             
             "Visitors Insurance": """
-            Focus on QIC visitors health insurance in Qatar:
-            - Mandatory health insurance for visitors
-            - Visa requirements and insurance
-            - Coverage details and benefits
-            - Application process for visitor insurance
-            - Duration and renewal of visitor insurance
-            - Emergency medical coverage
+            QIC Visitors Health Insurance in Qatar:
+            - Mandatory for all visitors entering Qatar
+            - Visa requirement linkage
+            - Coverage: emergency medical treatment, hospitalization
+            - Application process online
+            - Duration matching visa validity
+            - Family visitor insurance options
+            - Benefits and coverage limits
+            - Emergency medical evacuation
+            - Pre-existing conditions policy
             """,
             
             "Travel Insurance": """
-            Focus on QIC travel insurance products:
-            - Outbound travel insurance from Qatar
-            - Schengen area travel insurance requirements
-            - International travel coverage
-            - Trip cancellation and interruption
-            - Medical emergencies abroad
-            - Lost baggage and travel delays
-            - Adventure sports coverage
+            QIC Travel Insurance from Qatar:
+            - Outbound travel insurance
+            - Schengen area specific requirements
+            - Coverage: trip cancellation, medical emergencies, lost baggage
+            - Adventure sports coverage options
+            - Online claims submission
+            - 24/7 emergency assistance
+            - Different travel insurance packages
+            - Business travel coverage
+            - Family travel insurance
             """,
             
             "QIC Company": """
-            Focus on QIC Group company information:
+            QIC Group Company Information:
             - Founded in 1964, first insurance company in Qatar
+            - Market leader in Qatar insurance sector
             - A- rating from S&P Global
             - 2 million clients across Qatar and GCC
-            - Market leader in Qatar insurance
-            - Company achievements and awards
+            - Online insurance pioneer in Qatar
+            - Awards and recognitions
             - Subsidiaries and international presence
+            - Company achievements and milestones
+            - Digital transformation initiatives
             """,
             
             "Claims Process": """
-            Focus on QIC insurance claims procedures:
-            - Motor insurance claims process
-            - Travel insurance claims
-            - Home insurance claims
-            - Required documentation for claims
-            - Claim tracking and status updates
-            - Claim settlement process
-            - Timeframes for claim processing
+            QIC Claims Handling Process:
+            - Motor claims: police report requirements, garage network
+            - Travel claims: documentation requirements
+            - Home insurance claims process
+            - Online claim tracking system
+            - Claim settlement timeframes
+            - Required documents for different claim types
+            - Claim approval process
+            - Cashless claim settlements
+            - Third-party claim handling
             """,
             
             "Insurance Products": """
-            Focus on QIC's range of insurance products:
-            - Home contents insurance
-            - Boat and yacht insurance
-            - Personal accident insurance
-            - Business shield insurance
-            - Golf insurance
-            - School fees protection
-            - Specialized insurance products
+            QIC Insurance Product Portfolio:
+            - Home Contents Insurance
+            - Boat & Yacht Insurance
+            - Personal Accident Insurance
+            - Business Shield for companies
+            - Golf Insurance
+            - School Fees Protection
+            - Investment-linked products
+            - Specialized insurance solutions
+            - Cyber insurance options
+            - Medical insurance products
             """,
             
             "Qatar Living": """
-            Focus on living in Qatar and related insurance:
-            - Car ownership transfer process
-            - Istimara renewal procedures
-            - Visa and residency requirements
-            - Road trip preparation in Qatar
-            - Local regulations and compliance
+            Living in Qatar with QIC Services:
+            - Istimara (vehicle registration) process
+            - Car ownership transfer in Qatar
+            - Road trip preparation requirements
+            - Family visit visa procedures
+            - Mandatory insurance requirements
             - Seasonal considerations for insurance
+            - QIC's role in daily life in Qatar
+            - Cultural aspects of insurance in Qatar
+            - Legal requirements for residents
             """
         }
         
-        theme_description = theme_prompts.get(theme, f"QIC {theme} insurance products and services")
+        theme_context = theme_contexts.get(theme, f"QIC {theme} products and services in Qatar")
         
         prompt = f"""
-        Create exactly {num_questions} multiple choice quiz questions about: {theme}
+        Create {num_questions} multiple choice questions about {theme} with QIC Group in Qatar.
         
         CONTEXT AND FOCUS:
-        {theme_description}
+        {theme_context}
         
         REQUIREMENTS:
-        - Questions must be specifically about {theme}
-        - Make them educational and practical for insurance customers
-        - Options should be clear and distinct
-        - Ensure correct answers are factually accurate about QIC
-        - Questions should test useful knowledge
+        - Questions must be specifically about QIC {theme} products/services in Qatar
+        - Make them educational and practical for QIC customers
+        - Ensure all facts are accurate about QIC Group
+        - Options should be clear, distinct, and plausible
+        - Include one correct answer and three incorrect but reasonable alternatives
+        - Provide brief explanations focusing on QIC services
+        - Make questions diverse and cover different aspects of {theme}
         
         RETURN ONLY VALID JSON with this exact structure:
         {{
@@ -142,20 +218,21 @@ class QuizGenerator:
             "difficulty": "{difficulty}",
             "questions": [
                 {{
-                    "question": "Specific question about {theme}?",
+                    "question": "Specific question about QIC {theme}?",
                     "type": "multiple_choice",
                     "options": ["Option A", "Option B", "Option C", "Option D"],
                     "correct_answer": "Exact text of the correct option",
-                    "explanation": "Brief explanation focusing on QIC services"
+                    "explanation": "Brief explanation about QIC services"
                 }}
             ]
         }}
         
-        Do not include any other text outside the JSON.
+        Important: All questions must be factually accurate about QIC Group and relevant to Qatar.
+        Make sure the questions are fresh and not repetitive.
         """
         
         try:
-            response_text = self.call_ollama(prompt)
+            response_text = self.call_openai(prompt)
             
             # Extract JSON from response
             json_start = response_text.find('{')
@@ -167,11 +244,11 @@ class QuizGenerator:
             json_str = response_text[json_start:json_end]
             quiz_data = json.loads(json_str)
             
-            # Validate we got questions for the right theme
-            if quiz_data.get('theme') != theme:
-                print(f" AI returned wrong theme: {quiz_data.get('theme')} instead of {theme}")
-        
-            print(f"Generated {len(quiz_data['questions'])} questions about {theme}")
+            # Validate structure
+            if 'questions' not in quiz_data or not isinstance(quiz_data['questions'], list):
+                raise ValueError("Invalid quiz structure from AI")
+            
+            print(f"✅ Generated {len(quiz_data['questions'])} QIC {theme} questions")
             
             # Store in database
             self._store_questions(quiz_data, theme, difficulty)
@@ -179,51 +256,51 @@ class QuizGenerator:
             return quiz_data
             
         except Exception as e:
-            print(f"AI generation failed: {e}")
-            # Return THEME-SPECIFIC demo questions
+            print(f"❌ OpenAI generation failed: {e}")
+            print("🔄 Falling back to QIC-specific demo questions")
             return self.get_theme_specific_demo(theme, num_questions)
     
     def get_theme_specific_demo(self, theme, num_questions):
-        """Provide theme-specific demo questions when AI fails"""
-        theme_demos = {
+        """Provide QIC-specific demo questions when AI fails"""
+        qic_demos = {
             "Car Insurance": [
                 {
-                    "question": "What is the minimum car insurance required by Qatari law?",
+                    "question": "What is the minimum car insurance required by Qatari law that QIC provides?",
                     "type": "multiple_choice",
-                    "options": ["Third Party Liability (TPL)", "Comprehensive Insurance", "GCC Insurance", "No insurance required"],
+                    "options": ["Third Party Liability (TPL)", "Comprehensive Insurance", "GCC Cross-border Insurance", "No insurance required"],
                     "correct_answer": "Third Party Liability (TPL)",
-                    "explanation": "TPL is mandatory by Qatari law for all vehicles."
+                    "explanation": "TPL is mandatory by Qatari law for all vehicles, and QIC is a leading provider."
                 },
                 {
-                    "question": "What does comprehensive car insurance from QIC typically cover?",
-                    "type": "multiple_choice",
-                    "options": ["Only third party damages", "Own vehicle damage and third party", "Only theft coverage", "Only accident coverage"],
-                    "correct_answer": "Own vehicle damage and third party",
-                    "explanation": "Comprehensive insurance covers both your own vehicle and third party liabilities."
+                    "question": "What does QIC Comprehensive car insurance typically cover?",
+                    "type": "multiple_choice", 
+                    "options": ["Only third party damages", "Own vehicle damage and third party liabilities", "Only theft coverage", "Only accident coverage for other vehicles"],
+                    "correct_answer": "Own vehicle damage and third party liabilities",
+                    "explanation": "QIC Comprehensive insurance covers damage to your own vehicle plus third party liabilities."
                 },
                 {
-                    "question": "For how long is a typical QIC car insurance policy valid?",
+                    "question": "What is Istimara in the context of QIC car insurance?",
                     "type": "multiple_choice",
-                    "options": ["6 months", "1 year", "2 years", "3 years"],
-                    "correct_answer": "1 year",
-                    "explanation": "QIC car insurance policies are typically valid for one year and renewable."
+                    "options": ["Vehicle registration card", "Insurance policy document", "Driver's license", "Traffic violation ticket"],
+                    "correct_answer": "Vehicle registration card", 
+                    "explanation": "Istimara is the vehicle registration card required for all vehicles in Qatar, and insurance is needed for its renewal."
                 }
             ],
             
             "Visitors Insurance": [
                 {
-                    "question": "Who needs mandatory visitors health insurance in Qatar?",
-                    "type": "multiple_choice",
-                    "options": ["Only tourists", "All visitors entering Qatar", "Only business visitors", "Only family visitors"],
+                    "question": "Who needs QIC Visitors Health Insurance in Qatar?",
+                    "type": "multiple_choice", 
+                    "options": ["Only tourists staying in hotels", "All visitors entering Qatar", "Only business visitors", "Only family visitors on specific visas"],
                     "correct_answer": "All visitors entering Qatar",
-                    "explanation": "All visitors to Qatar require mandatory health insurance as per government regulations."
+                    "explanation": "QIC Visitors Insurance is mandatory for all visitors to Qatar as per government regulations."
                 },
                 {
                     "question": "What is typically covered by QIC visitors insurance?",
                     "type": "multiple_choice",
                     "options": ["Emergency medical treatment", "Elective surgeries", "Dental cosmetics", "Vision correction"],
                     "correct_answer": "Emergency medical treatment",
-                    "explanation": "Visitors insurance primarily covers emergency medical treatments and hospitalization."
+                    "explanation": "QIC Visitors insurance primarily covers emergency medical treatments and hospitalization."
                 }
             ],
             
@@ -314,7 +391,7 @@ class QuizGenerator:
         }
         
         # Get questions for the specific theme, fallback to Car Insurance if theme not found
-        questions = theme_demos.get(theme, theme_demos["Car Insurance"])
+        questions = qic_demos.get(theme, qic_demos["Car Insurance"])
         return {
             "theme": theme,
             "difficulty": "easy",
@@ -340,12 +417,12 @@ class QuizGenerator:
                     metadatas=[metadata],
                     ids=[question_id]
                 )
-            print(f"Stored {len(quiz_data['questions'])} questions for {theme}")
+            print(f"💾 Stored {len(quiz_data['questions'])} questions for {theme}")
         except Exception as e:
-            print(f" Could not store questions: {e}")
+            print(f"⚠️ Could not store questions: {e}")
     
     def evaluate_answers(self, quiz, user_answers):
-        """Evaluate user answers"""
+        """Evaluate user answers and provide explanations"""
         results = []
         for i, (question, user_answer) in enumerate(zip(quiz['questions'], user_answers)):
             is_correct = user_answer == question['correct_answer']
@@ -355,46 +432,64 @@ class QuizGenerator:
                 'user_answer': user_answer,
                 'correct_answer': question['correct_answer'],
                 'is_correct': is_correct,
-                'explanation': question.get('explanation', 'No explanation provided.')
+                'explanation': question.get('explanation', 'QIC provides comprehensive insurance solutions in Qatar.')
             })
         return results
+    
+    def get_remaining_budget(self):
+        """Check remaining API budget"""
+        current_cost = self.total_tokens_used * self.cost_per_token
+        remaining = 5.0 - current_cost
+        return remaining
+    
+    def get_usage_stats(self):
+        """Get API usage statistics"""
+        current_cost = self.total_tokens_used * self.cost_per_token
+        remaining = 5.0 - current_cost
+        
+        return {
+            "total_tokens_used": self.total_tokens_used,
+            "total_cost": f"${current_cost:.4f}",
+            "remaining_budget": f"${remaining:.2f}",
+            "estimated_questions_remaining": int(remaining / 0.01)  # rough estimate
+        }
 
-def test_generator():
-    print("🧪 Testing Quiz Generator with different themes...")
+def test_qic_quiz():
+    """Test the QIC quiz generator with all themes"""
+    print("🧪 Testing QIC Quiz Generator with OpenAI...")
     generator = QuizGenerator()
     
-    themes = ["Car Insurance", "Travel Insurance", "QIC Company", "Insurance Products"]
+    themes = ["Car Insurance", "Visitors Insurance", "Travel Insurance", "QIC Company", "Claims Process", "Insurance Products", "Qatar Living"]
     
     for theme in themes:
-        print(f"\n Testing: {theme}")
-        quiz = generator.generate_quiz(theme, "easy", 2)
-        print(f"Generated {len(quiz['questions'])} questions about {theme}")
-        for i, q in enumerate(quiz['questions']):
-            print(f"   Q{i+1}: {q['question'][:50]}...")
-
-        # --- Reward system integration ---
-        from reward_db import RewardDB
-        reward = RewardDB()
-
-        user_id = 1  # Replace this with real user ID
-
-        # Simulate answers (for now all correct)
-        user_answers = [q['correct_answer'] for q in quiz['questions']]
-
-        results = generator.evaluate_answers(quiz, user_answers)
-        correct = sum(r['is_correct'] for r in results)
-        total = len(quiz['questions'])
-        passed = correct / total >= 0.6
-
-        reward.add_points(user_id, correct * 50, 'weekly_quiz_completed')
-        reward.update_streak(user_id, passed)
-
-        if passed:
-            reward.issue_coupon(user_id, "20% off", 7)
-
-        wallet = reward.get_user_wallet(user_id)
-        print("\n💰 User Wallet Summary:", wallet)
-        print("-----------------------------------------------------")
+        print(f"\n🎯 Testing: {theme}")
+        try:
+            quiz = generator.generate_quiz(theme, "easy", 3)
+            
+            print(f"📝 Generated {len(quiz['questions'])} QIC {theme} questions:")
+            for i, q in enumerate(quiz['questions']):
+                print(f"   Q{i+1}: {q['question']}")
+                print(f"   ✅ Correct: {q['correct_answer']}")
+            
+            # Test evaluation
+            user_answers = [q['options'][0] for q in quiz['questions']]  # Pick first option
+            results = generator.evaluate_answers(quiz, user_answers)
+            
+            correct_count = sum(1 for r in results if r['is_correct'])
+            print(f"📊 Test Results: {correct_count}/{len(results)} correct")
+            
+        except Exception as e:
+            print(f"❌ Error with {theme}: {e}")
+        
+        print("─" * 50)
+    
+    # Show final usage
+    if generator.api_key:
+        usage = generator.get_usage_stats()
+        print(f"\n💰 Final Usage Stats:")
+        print(f"   Total Tokens: {usage['total_tokens_used']}")
+        print(f"   Total Cost: {usage['total_cost']}")
+        print(f"   Remaining Budget: {usage['remaining_budget']}")
 
 if __name__ == "__main__":
-    test_generator()
+    test_qic_quiz()

@@ -1,0 +1,20 @@
+# Virtual environments
+quiz_venv/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+*.env
+
+# Database files
+*.sqlite3
+*.db
+*.json
+
+# OS files
+.DS_Store

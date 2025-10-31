@@ -1,0 +1,18 @@
+{
+  "QICAA5E52E1": {
+    "code": "QICAA5E52E1",
+    "discount": "20% off",
+    "issued_at": "2025-10-31T19:44:51.015354",
+    "expires_at": "2025-11-07T19:44:51.015329",
+    "used": false,
+    "user_id": 123
+  },
+  "QIC471DB819": {
+    "code": "QIC471DB819",
+    "discount": "20% off",
+    "issued_at": "2025-10-31T20:26:14.813607",
+    "expires_at": "2025-11-07T20:26:14.813582",
+    "used": false,
+    "user_id": 1
+  }
+}

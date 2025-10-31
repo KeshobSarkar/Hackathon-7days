@@ -1,0 +1,49 @@
+{
+  "123": {
+    "points": 300,
+    "streak": {
+      "current": 1,
+      "last_quiz": "2025-10-31T19:44:51.010374",
+      "warnings": 0
+    },
+    "coupons": [
+      {
+        "code": "QICAA5E52E1",
+        "discount": "20% off",
+        "issued_at": "2025-10-31T19:44:51.015354",
+        "expires_at": "2025-11-07T19:44:51.015329",
+        "used": false,
+        "user_id": 123
+      }
+    ]
+  },
+  "1": {
+    "points": 200,
+    "streak": {
+      "current": 1,
+      "last_quiz": "2025-10-31T20:26:14.794531",
+      "warnings": 0
+    },
+    "coupons": [
+      {
+        "code": "QIC471DB819",
+        "discount": "20% off",
+        "issued_at": "2025-10-31T20:26:14.813607",
+        "expires_at": "2025-11-07T20:26:14.813582",
+        "used": false,
+        "user_id": 1
+      }
+    ],
+    "quiz_history": []
+  },
+  "faiz": {
+    "points": 0,
+    "streak": {
+      "current": 0,
+      "last_quiz": null,
+      "warnings": 0
+    },
+    "coupons": [],
+    "quiz_history": []
+  }
+}

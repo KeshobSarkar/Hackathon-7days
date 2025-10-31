@@ -1,0 +1,38 @@
+{
+  "fadaba82-ee33-4d63-bd54-a3b4d4c1eee5": {
+    "user_id": 123,
+    "points": 50,
+    "reason": "weekly_quiz",
+    "timestamp": "2025-10-31T19:02:38.576508"
+  },
+  "ca6d46c7-3506-4962-9183-d7358da8c35c": {
+    "user_id": 123,
+    "points": 0,
+    "reason": "weekly_quiz",
+    "timestamp": "2025-10-31T19:13:09.368212"
+  },
+  "4a548057-c334-4d72-8413-31e8786c5d55": {
+    "user_id": 123,
+    "points": 0,
+    "reason": "weekly_quiz",
+    "timestamp": "2025-10-31T19:42:00.783633"
+  },
+  "cd69621e-94d5-4de2-ac76-65e8f657eeb4": {
+    "user_id": 123,
+    "points": 0,
+    "reason": "weekly_quiz",
+    "timestamp": "2025-10-31T19:43:59.814518"
+  },
+  "ee0adaf2-0e03-4a98-a255-d0a424115f32": {
+    "user_id": 123,
+    "points": 250,
+    "reason": "weekly_quiz",
+    "timestamp": "2025-10-31T19:44:51.009275"
+  },
+  "26e14f32-4470-44d1-a893-2dc272ef32dd": {
+    "user_id": 1,
+    "points": 200,
+    "reason": "weekly_quiz",
+    "timestamp": "2025-10-31T20:26:14.784716"
+  }
+}
