@@ -17,7 +17,7 @@ class QuizGenerator:
             self.questions_collection = self.chroma_client.create_collection("quiz_questions")
             print(" Created new quiz questions collection")
     
-    def call_ollama(self, prompt, model="qwen2.5:1.5b"):
+    def call_ollama(self, prompt, model="llama3:latest"):
         """Call local Ollama API to generate content"""
         payload = {
             "model": model,
@@ -368,9 +368,33 @@ def test_generator():
     for theme in themes:
         print(f"\n Testing: {theme}")
         quiz = generator.generate_quiz(theme, "easy", 2)
-        print(f"enerated {len(quiz['questions'])} questions about {theme}")
+        print(f"Generated {len(quiz['questions'])} questions about {theme}")
         for i, q in enumerate(quiz['questions']):
             print(f"   Q{i+1}: {q['question'][:50]}...")
+
+        # --- Reward system integration ---
+        from reward_db import RewardDB
+        reward = RewardDB()
+
+        user_id = 1  # Replace this with real user ID
+
+        # Simulate answers (for now all correct)
+        user_answers = [q['correct_answer'] for q in quiz['questions']]
+
+        results = generator.evaluate_answers(quiz, user_answers)
+        correct = sum(r['is_correct'] for r in results)
+        total = len(quiz['questions'])
+        passed = correct / total >= 0.6
+
+        reward.add_points(user_id, correct * 50, 'weekly_quiz_completed')
+        reward.update_streak(user_id, passed)
+
+        if passed:
+            reward.issue_coupon(user_id, "20% off", 7)
+
+        wallet = reward.get_user_wallet(user_id)
+        print("\n💰 User Wallet Summary:", wallet)
+        print("-----------------------------------------------------")
 
 if __name__ == "__main__":
     test_generator()

@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 
 # Import components
 try:
-    from utils.quiz_generator import QuizGenerator
-    from utils.reward_engine import RewardEngine
-    from utils.streak_manager import StreakManager
+    from quiz_generator import QuizGenerator
+    from reward_engine import RewardEngine
+    from streak_manager import StreakManager
     
     # Initialize components
     quiz_gen = QuizGenerator()
