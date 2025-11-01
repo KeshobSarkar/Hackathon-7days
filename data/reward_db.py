@@ -2,18 +2,32 @@ import os
 import psycopg2
 from datetime import datetime, timedelta
 from uuid import uuid4
+from dotenv import dotenv_values
 
 class RewardDB:
     def __init__(self):
-        self.db_url = os.getenv("DATABASE_URL")
+        env_path = os.path.join(os.path.dirname(__file__), ".env")
+        env_vars = dotenv_values(env_path)  # loads only from file, not global
+        self.db_url = env_vars.get("DATABASE_URL")
+
+        print(f"📦 Loading from .env file at: {env_path}")
+        print("📦 DATABASE_URL loaded:", self.db_url if self.db_url else "❌ Not found")
+
         if not self.db_url:
-            raise ValueError("DATABASE_URL not found. Please set it with setx or .env")
+            raise ValueError(f"❌ DATABASE_URL missing in .env file: {env_path}")
 
-        self.conn = psycopg2.connect(self.db_url)
-        self.conn.autocommit = True
-        self._create_tables()
+        # --- Connect to PostgreSQL ---
+        try:
+            safe_target = self.db_url.split("@")[-1] if "@" in self.db_url else self.db_url
+            print(f"🔗 Connecting to: {safe_target}")
+            self.conn = psycopg2.connect(self.db_url)
+            self.conn.autocommit = True
+            print("✅ Connection successful!")
+            self._create_tables()
+        except Exception as e:
+            print(f"❌ Connection failed: {e}")
 
-    # -------------------------------
+    #-----------------------------
     # DATABASE SETUP
     # -------------------------------
     def _create_tables(self):
@@ -246,3 +260,5 @@ class RewardDB:
             {"user_id": row[0], "points": row[1], "streak": row[2], "avg_score": round(row[3], 1)}
             for row in rows
         ]
+if __name__ == "__main__":
+    RewardDB()
