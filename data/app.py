@@ -2,18 +2,24 @@ import streamlit as st
 from datetime import datetime, timedelta
 import os
 import sys
+import time
 
 # Add utils directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 
-from quiz_generator import QuizGenerator
-from reward_db import RewardDB
+# Initialize components WITH PROPER CACHING - THIS IS THE KEY FIX
+@st.cache_resource
+def get_quiz_generator():
+    from quiz_generator import QuizGenerator
+    return QuizGenerator()
 
-# Initialize components
-quiz_gen = QuizGenerator()
-reward = RewardDB()
-TESTING_MODE = True
+@st.cache_resource
+def get_reward_db():
+    from reward_db import RewardDB
+    return RewardDB()
 
+quiz_gen = get_quiz_generator()
+reward = get_reward_db()
 
 def main():
     st.set_page_config(
@@ -22,12 +28,24 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    
+    # Initialize session state to prevent unnecessary re-runs
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = True
+        st.session_state.quiz = None
+        st.session_state.submitted = False
+        st.session_state.results = None
+        st.session_state.stats = None
+        st.session_state.coupon_earned = None
 
     # ---------------------------
-    # 🎨 Clean modern CSS
+    # 🎨 Clean modern CSS - FIXED
     # ---------------------------
     st.markdown("""
     <style>
+    .stApp > header {
+        display: none;
+    }
     .main-header {
         font-size: 2.5rem;
         color: #1f77b4;
@@ -47,11 +65,42 @@ def main():
         margin: 1rem 0;
     }
     .coupon-card {
-        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 0.5rem 0;
-        border: 1px solid #ddd;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 1.2rem;
+        border-radius: 12px;
+        margin: 0.8rem 0;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .coupon-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+    }
+    .coupon-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+    .coupon-header {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+    .coupon-details {
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+        line-height: 1.5;
     }
     .leaderboard-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -64,6 +113,14 @@ def main():
     .rank-2 { background: linear-gradient(135deg, #C0C0C0, #A0A0A0) !important; }
     .rank-3 { background: linear-gradient(135deg, #CD7F32, #8B4513) !important; }
     .current-user { border: 3px solid #00FF00 !important; transform: scale(1.02); }
+    
+    /* HIDE STREAMLIT'S LOADING INDICATOR */
+    .stApp > div[data-testid="stToolbar"] {
+        display: none;
+    }
+    .stApp > div[data-testid="stDecoration"] {
+        display: none;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -116,16 +173,28 @@ def main():
         with col_b:
             difficulty = st.selectbox("Difficulty Level:", ["Easy", "Medium", "Hard"])
 
-        if st.button("🎲 Generate New Quiz", use_container_width=True, type="primary"):
+        # Generate Quiz - USE FORM TO REDUCE RE-RUNS
+        with st.form("quiz_form"):
+            generate_clicked = st.form_submit_button("🎲 Generate New Quiz", use_container_width=True)
+            
+        if generate_clicked:
             with st.spinner("🤖 Generating your quiz..."):
-                st.session_state.quiz = quiz_gen.generate_quiz(theme, difficulty.lower(), num_questions)
+                st.session_state.quiz = quiz_gen.generate_quiz(
+                    theme=theme,
+                    difficulty=difficulty.lower(),
+                    num_questions=num_questions
+                )
                 st.session_state.submitted = False
+                st.session_state.results = None
+                st.session_state.stats = None
+                st.session_state.coupon_earned = None
             st.success("✅ Quiz generated successfully!")
+            st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Display Quiz
-        if st.session_state.get("quiz") and not st.session_state.get("submitted", False):
+        if st.session_state.quiz and not st.session_state.submitted:
             quiz = st.session_state.quiz
             st.subheader(f"🧩 {quiz['theme']} Quiz ({quiz['difficulty'].title()})")
 
@@ -156,12 +225,10 @@ def main():
                 if passed:
                     coupon_code = reward.issue_coupon(username, validity_days=7)
                     st.session_state.coupon_earned = coupon_code
-                else:
-                    st.session_state.coupon_earned = None
                 st.rerun()
 
         # Show results after submission
-        if st.session_state.get("submitted", False):
+        if st.session_state.submitted and st.session_state.results:
             results = st.session_state.results
             stats = st.session_state.stats
 
@@ -180,23 +247,30 @@ def main():
 
             if stats["passed"]:
                 st.success("🎉 Congratulations! You passed and earned a reward!")
-                if st.session_state.get("coupon_earned"):
-                    new_coupon = reward.get_user_wallet(username)["coupons"][0]
-                    st.markdown(
-                        f'<div class="coupon-card">'
-                        f"<b>{new_coupon['discount']}</b> ({new_coupon['coupon_type']})<br>"
-                        f"📅 Received: {new_coupon['received_at'][:19]}<br>"
-                        f"⏰ Expires: {new_coupon['expires_at'][:19]}"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
+                if st.session_state.coupon_earned:
+                    updated_wallet = reward.get_user_wallet(username)
+                    if updated_wallet["coupons"]:
+                        new_coupon = updated_wallet["coupons"][0]
+                        st.markdown(
+                            f'<div class="coupon-card">'
+                            f'<div class="coupon-header">🎁 {new_coupon["discount"]}</div>'
+                            f'<div class="coupon-details">'
+                            f'🏷️ {new_coupon["coupon_type"].title()}<br>'
+                            f'📅 {new_coupon["received_at"][:19]}<br>'
+                            f'⏰ Expires: {new_coupon["expires_at"][:19]}'
+                            f'</div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
             else:
                 st.warning("💡 Score 60% or higher next time to earn a coupon!")
 
             if st.button("🔄 Take Another Quiz", use_container_width=True):
-                for key in ["quiz", "results", "submitted", "stats", "coupon_earned"]:
-                    if key in st.session_state:
-                        del st.session_state[key]
+                st.session_state.quiz = None
+                st.session_state.submitted = False
+                st.session_state.results = None
+                st.session_state.stats = None
+                st.session_state.coupon_earned = None
                 st.rerun()
 
     # ---------------------------
@@ -207,13 +281,15 @@ def main():
         leaderboard = reward.get_leaderboard(limit=10)
         if leaderboard:
             for i, player in enumerate(leaderboard, 1):
-                is_current = player["user_id"] == username
+                player_identifier = player.get("username") or player.get("user_id", "Unknown")
+                is_current = str(player_identifier).lower() == username.lower()
+                
                 css_class = f"rank-{i}" if i <= 3 else "leaderboard-card"
                 if is_current:
                     css_class += " current-user"
 
                 st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                st.write(f"**#{i} {player['user_id'].title()}** — 💎 {player['points']} pts | 🔥 {player['streak']}w")
+                st.write(f"**#{i} {str(player_identifier).title()}** — 💎 {player['points']} pts | 🔥 {player['streak']}w")
                 st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.info("No players yet — be the first!")
@@ -224,10 +300,13 @@ def main():
             for c in coupons:
                 st.markdown(
                     f'<div class="coupon-card">'
-                    f"<b>{c['discount']}</b> ({c['coupon_type']})<br>"
-                    f"📅 Received: {c['received_at'][:19]}<br>"
-                    f"⏰ Expires: {c['expires_at'][:19]}"
-                    f"</div>",
+                    f'<div class="coupon-header">🎁 {c["discount"]}</div>'
+                    f'<div class="coupon-details">'
+                    f'🏷️ {c["coupon_type"].title()}<br>'
+                    f'📅 {c["received_at"][:19]}<br>'
+                    f'⏰ Expires: {c["expires_at"][:19]}'
+                    f'</div>'
+                    f'</div>',
                     unsafe_allow_html=True
                 )
         else:
